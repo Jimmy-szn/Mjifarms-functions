@@ -50,7 +50,7 @@ module.exports = async (req, res) => {
 
     // --- REVISED ROUTING LOGIC START ---
     // Now, handle POST requests for diagnosis at the '/diagnose' path
-    if (req.url === '/diagnose' && req.method === 'POST') { // <-- Changed to '/diagnose' path for POST
+    if ( req.method === 'POST') { // <-- Changed to '/diagnose' path for POST
         console.log("Matched POST request to /diagnose for plant diagnosis."); // For debugging Vercel logs
 
         // 1. Authenticate User (Verify Firebase ID Token)
