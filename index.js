@@ -32,21 +32,22 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 
 // Main handler for all incoming requests
 module.exports = async (req, res) => {
-    // --- START CORS HEADERS ---
-    // Allow requests from specific origins during development (Flutter web local dev server)
-    // IMPORTANT: In production, narrow this down to your actual Flutter web app's domain(s)
+    // --- START CORS HEADERS FOR TEMPORARY LOCAL DEBUGGING (WILDCARD) ---
+    // !!! WARNING: This is NOT secure for production. Use for local development ONLY. !!!
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Temporarily allow all origins for local dev
+    // You MUST change this back to specific origins (like in the commented-out 'allowedOrigins' block below)
+    // when deploying to production.
+
+    // Commented out the specific allowedOrigins check for temporary wildcard use:
+    /*
     const allowedOrigins = [
-        // --- ADD YOUR FLUTTER WEB APP'S CURRENT LOCALHOST PORT HERE ---
-        // When you run 'flutter run -d chrome', check the terminal for the URL,
-        // e.g., 'Serving `web` on http://localhost:55280/'
-        'http://localhost:55280', // As seen in your error, add this
-        'http://127.0.0.1:55280', // Add 127.0.0.1 too
-        'http://localhost:55281', // Example: other common Flutter local dev port
+        'http://localhost:55280',
+        'http://127.0.0.1:55280',
+        'http://localhost:55281',
         'http://127.0.0.1:55281',
-        'http://localhost:8080',  // Common web server port fallback
+        'http://localhost:8080',
         'http://127.0.0.1:8080',
-        'https://mjifarms-frontend.vercel.app', // Example: If your Flutter app is deployed to Vercel
-        // Add your actual production frontend domain here if applicable
+        'https://mjifarms-frontend.vercel.app', // Your production frontend URL
     ];
 
     const origin = req.headers.origin;
@@ -54,12 +55,9 @@ module.exports = async (req, res) => {
         res.setHeader('Access-Control-Allow-Origin', origin);
     } else {
         // Fallback for origins not explicitly in allowedOrigins.
-        // For local dev, a wildcard might be used cautiously.
         // For production, you typically *do not* use '*', but explicitly list domains.
-        // If you are only debugging locally, you could use '*' temporarily, but change for production.
-        // Example: Uncomment this line for temporary local debugging
-        // res.setHeader('Access-Control-Allow-Origin', '*'); 
     }
+    */
 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Allow GET, POST, and OPTIONS for preflight
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allow these headers
