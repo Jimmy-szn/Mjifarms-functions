@@ -4,8 +4,8 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // Initialize Firebase Admin SDK using environment variable
-const serviceAccountBaseBase64 = process.env.FIREBASE_SERVICE_ACCOUNT;
-if (!serviceAccountBaseBase64) {
+const serviceAccountBaseBase66 = process.env.FIREBASE_SERVICE_ACCOUNT;
+if (!serviceAccountBaseBase66) {
   console.error("FIREBASE_SERVICE_ACCOUNT environment variable is not set. Please set it in Vercel project settings.");
   module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Firebase credentials missing.' });
   return;
@@ -13,7 +13,7 @@ if (!serviceAccountBaseBase64) {
 
 let serviceAccount;
 try {
-    serviceAccount = JSON.parse(Buffer.from(serviceAccountBaseBase64, 'base64').toString('utf8'));
+    serviceAccount = JSON.parse(Buffer.from(serviceAccountBaseBase66, 'base64').toString('utf8'));
 } catch (e) {
     console.error("Error parsing FIREBASE_SERVICE_ACCOUNT:", e);
     module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Invalid Firebase credentials format.' });
@@ -32,17 +32,18 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 
 // Main handler for all incoming requests
 module.exports = async (req, res) => {
-    // --- START CORS HEADERS: PLACE THESE AT THE VERY BEGINNING OF YOUR HANDLER ---
+    // --- START CORS HEADERS: ENSURE THESE ARE SET EARLY AND CONSISTENTLY ---
 
     // Define allowed origins. Use a RegExp for localhost to handle dynamic ports.
     // IMPORTANT: For production, only include your fixed deployed frontend domain(s).
     const allowedOrigins = [
         // Production Frontend Domain(s) - Add these when your Flutter web app is deployed:
-         'https://mjifarms-backend.vercel.app', // Example: If your Flutter app is deployed to Vercel
+        // 'https://mjifarms-frontend.vercel.app', // Example: If your Flutter app is deployed to Vercel
         // 'https://your-firebase-hosting-domain.web.app', // Example: If deployed to Firebase Hosting
 
         // Development Localhost Domains (Handles dynamic ports)
-        /^(http|https):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/, // Allows any port on localhost or 127.0.0.1
+        // This regex allows any port on localhost or 127.0.0.1
+        /^(http|https):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
     ];
 
     const origin = req.headers.origin;
@@ -61,12 +62,19 @@ module.exports = async (req, res) => {
         });
     }
 
+    // Always set basic CORS headers for preflight and actual requests.
+    // The 'Access-Control-Allow-Origin' header is critical.
     if (isOriginAllowed) {
         res.setHeader('Access-Control-Allow-Origin', origin);
     } else {
-        // If the origin is NOT in your allowed list, do NOT set the header.
-        // The browser will then block the request, ensuring security.
-        // Do NOT use '*' in production.
+        // If the origin is NOT explicitly allowed, you might choose to:
+        // 1. Not set the header, blocking the request (most secure, default behavior if no header is set).
+        // 2. Set it to a default (e.g., your Vercel frontend URL, or even '*' for dev only).
+        // For local development, especially when Flutter's port changes, a common tactic is to
+        // allow all for OPTIONS and then filter for actual requests, or use the regex as above.
+        // If you are absolutely stuck for local dev, you can use a wildcard here temporarily,
+        // but it is INSECURE for production.
+        // res.setHeader('Access-Control-Allow-Origin', '*'); // INSECURE FOR PRODUCTION
     }
 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Essential methods for your API
@@ -74,6 +82,7 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 24 hours (1 day)
 
     // Handle the OPTIONS preflight request. This MUST return 204 No Content.
+    // No further logic should run for OPTIONS requests after headers are set.
     if (req.method === 'OPTIONS') {
         return res.status(204).end();
     }
