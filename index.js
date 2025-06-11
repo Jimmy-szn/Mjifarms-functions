@@ -20,13 +20,16 @@ try {
     return;
 }
 
-// Initialize Firebase Admin SDK only once
+// Initialize Firebase Admin SDK only once for Realtime Database
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
+        // IMPORTANT: Replace with your Firebase Realtime Database URL
+        databaseURL: "https://YOUR-FIREBASE-PROJECT-ID-default-rtdb.firebaseio.com" 
     });
 }
-const db = admin.firestore();
+// Get a reference to the Realtime Database service
+const db = admin.database();
 
 const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 
@@ -50,7 +53,7 @@ module.exports = async (req, res) => {
 
     // --- REVISED ROUTING LOGIC START ---
     // Now, handle POST requests for diagnosis at the '/diagnose' path
-    if ( req.method === 'POST') { // <-- Changed to '/diagnose' path for POST
+    if (req.url === '/diagnose' && req.method === 'POST') {
         console.log("Matched POST request to /diagnose for plant diagnosis."); // For debugging Vercel logs
 
         // 1. Authenticate User (Verify Firebase ID Token)
@@ -75,7 +78,8 @@ module.exports = async (req, res) => {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        const PLANTID_ENDPOINT = 'https://api.plant.id/v3/health_assessment';
+        // Updated PLANTID_ENDPOINT to v3 and added details parameter
+        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; 
 
         try {
             // 2. Make API Call to Plant.id with Base64 image
@@ -83,7 +87,15 @@ module.exports = async (req, res) => {
                 api_key: PLANTID_API_KEY,
                 images: [base64Image], // Sending Base64 string directly
                 organs: ['leaf', 'stem', 'flower', 'fruit'],
-                disease_details: true
+                disease_details: [ // Updated to use the 'details' parameter values
+                    "local_name",
+                    "description",
+                    "url",
+                    "treatment",
+                    "classification",
+                    "common_names",
+                    "cause"
+                ]
             }, {
                 headers: {
                     'Content-Type': 'application/json'
@@ -95,8 +107,8 @@ module.exports = async (req, res) => {
 
             // 3. Process API Response and Extract Diagnosis Data
             const diagnosisData = {
-                date: admin.firestore.FieldValue.serverTimestamp(),
-                // originalImageURL: imageUrl, // No direct URL if not stored in Firebase Storage
+                date: admin.database.ServerValue.TIMESTAMP, // Use Realtime Database server timestamp
+                // originalImageURL: imageUrl, // No direct URL if not stored persistently
                 source: "AI_Plant.id",
                 confidenceLevel: 0,
                 pestOrDisease: "Unknown Issue",
@@ -119,10 +131,13 @@ module.exports = async (req, res) => {
                 const topDisease = apiResponse.health_assessment.diseases[0];
                 diagnosisData.pestOrDisease = topDisease.name;
                 diagnosisData.confidenceLevel = topDisease.probability;
-                // Refined condition to use topDisease.suggestions directly
-                if (topDisease.suggestions && topDisease.suggestions.length > 0) { // Refined condition
+                if (topDisease.suggestions && topDisease.suggestions.length > 0) {
                     diagnosisData.recommendations = topDisease.suggestions.map((s) => s.name);
                 }
+                // Extracting additional details if available from the API response
+                if (topDisease.description) diagnosisData.description = topDisease.description.value;
+                if (topDisease.treatment) diagnosisData.treatment = topDisease.treatment.api_name; // Assuming it's an object with api_name, if direct value, adjust
+                if (topDisease.classification) diagnosisData.classification = topDisease.classification.taxonomy;
             } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
                 const topSuggestion = apiResponse.suggestions[0];
                 diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
@@ -134,15 +149,18 @@ module.exports = async (req, res) => {
                  diagnosisData.recommendations.push("Could not identify specific issue. Please try a clearer photo, different angle, or consult an expert.");
             }
 
-            // 4. Store Diagnosis in Firestore
-            const diagnosisRef = await db.collection('crop_logs').doc(cropLogId).collection('diagnoses').add(diagnosisData);
-            const diagnosisId = diagnosisRef.id;
+            // 4. Store Diagnosis in Realtime Database
+            // Structure: /crop_logs/{cropLogId}/diagnoses/{diagnosisId}
+            const diagnosisRef = db.ref(`crop_logs/${cropLogId}/diagnoses`).push(); // Generates a unique key
+            const diagnosisId = diagnosisRef.key; // Get the generated key
+
+            await diagnosisRef.set(diagnosisData); // Save the data
 
             // 5. Send Response to Flutter App
             return res.status(200).json({ status: 'success', diagnosisId: diagnosisId, diagnosisDetails: diagnosisData });
 
         } catch (error) {
-            console.error("Error during Plant.id API call or Firestore write:", error);
+            console.error("Error during Plant.id API call or Realtime Database write:", error);
             if (error.response) {
                 console.error("Plant.id API Error Response (Status:", error.response.status, "):", error.response.data);
                 return res.status(error.response.status || 500).json({
