@@ -9,10 +9,11 @@
     "deploy": "vercel"
   },
   "dependencies": {
-    "firebase-admin": "^12.0.0", 
-    "axios": "^1.6.0"             
+    "@vercel/sdk": "^1.8.0",
+    "axios": "^1.6.0",
+    "firebase-admin": "^12.0.0"
   },
   "devDependencies": {
-    "vercel": "^32.0.0"           
+    "vercel": "^32.0.0"
   }
 }
