@@ -1,16 +1,18 @@
 {
-  "name": "api",
+  "name": "urban-farming-vercel-backend",
   "version": "1.0.0",
-  "main": "diagnosePlant.js",
+  "description": "Vercel serverless functions for the Urban Farming Assistant App backend.",
+  "main": "api/diagnosePlant.js",
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "vercel dev",
+    "deploy": "vercel"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
-    "axios": "^1.9.0",
-    "firebase-admin": "^13.4.0"
+    "firebase-admin": "^12.0.0",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "vercel": "^32.0.0"
   }
 }
