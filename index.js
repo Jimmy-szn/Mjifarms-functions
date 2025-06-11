@@ -75,7 +75,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        const PLANTID_ENDPOINT = 'https://api.plant.id/v3/identification';
+        const PLANTID_ENDPOINT = 'https://api.plant.id/v3/health_assessment';
 
         try {
             // 2. Make API Call to Plant.id with Base64 image
