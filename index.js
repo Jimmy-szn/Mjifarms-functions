@@ -45,7 +45,7 @@ module.exports = async (req, res) => {
     }
 
     // Route requests based on URL path
-    if (req.url === '/diagnosePlant' && req.method === 'POST') {
+    if (req.url === '/' && req.method === 'POST') {
         // ... (rest of your diagnosePlant logic remains the same) ...
 
         // 1. Authenticate User (Verify Firebase ID Token)
