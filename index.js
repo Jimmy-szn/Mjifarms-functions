@@ -4,8 +4,8 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // Initialize Firebase Admin SDK using environment variable
-const serviceAccountBaseBase66 = process.env.FIREBASE_SERVICE_ACCOUNT;
-if (!serviceAccountBaseBase66) {
+const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT; // Corrected variable name
+if (!serviceAccountBase64) {
   console.error("FIREBASE_SERVICE_ACCOUNT environment variable is not set. Please set it in Vercel project settings.");
   module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Firebase credentials missing.' });
   return;
@@ -13,7 +13,7 @@ if (!serviceAccountBaseBase66) {
 
 let serviceAccount;
 try {
-    serviceAccount = JSON.parse(Buffer.from(serviceAccountBaseBase66, 'base64').toString('utf8'));
+    serviceAccount = JSON.parse(Buffer.from(serviceAccountBase64, 'base64').toString('utf8'));
 } catch (e) {
     console.error("Error parsing FIREBASE_SERVICE_ACCOUNT:", e);
     module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Invalid Firebase credentials format.' });
@@ -119,7 +119,8 @@ module.exports = async (req, res) => {
                 const topDisease = apiResponse.health_assessment.diseases[0];
                 diagnosisData.pestOrDisease = topDisease.name;
                 diagnosisData.confidenceLevel = topDisease.probability;
-                if (topDisease.suggestions && apiResponse.suggestions.length > 0) {
+                // Refined condition to use topDisease.suggestions directly
+                if (topDisease.suggestions && topDisease.suggestions.length > 0) { // Refined condition
                     diagnosisData.recommendations = topDisease.suggestions.map((s) => s.name);
                 }
             } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
