@@ -34,47 +34,28 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 module.exports = async (req, res) => {
     // --- START CORS HEADERS: ENSURE THESE ARE SET EARLY AND CONSISTENTLY ---
 
-    // Define allowed origins. Use a RegExp for localhost to handle dynamic ports.
-    // IMPORTANT: For production, only include your fixed deployed frontend domain(s).
-    const allowedOrigins = [
-        // Production Frontend Domain(s) - Add these when your Flutter web app is deployed:
-        // 'https://mjifarms-frontend.vercel.app', // Example: If your Flutter app is deployed to Vercel
-        // 'https://your-firebase-hosting-domain.web.app', // Example: If deployed to Firebase Hosting
-
-        // Development Localhost Domains (Handles dynamic ports)
-        // This regex allows any port on localhost or 127.0.0.1
-        /^(http|https):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
-    ];
-
     const origin = req.headers.origin;
-    let isOriginAllowed = false;
 
-    if (origin) { // Ensure origin header exists
-        isOriginAllowed = allowedOrigins.some(allowed => {
-            if (typeof allowed === 'string') {
-                // Exact string match for production domains
-                return allowed === origin;
-            } else if (allowed instanceof RegExp) {
-                // Regex match for dynamic localhost ports
-                return allowed.test(origin);
-            }
-            return false;
-        });
-    }
+    // Regex to match any localhost or 127.0.0.1 address with any port
+    const localhostRegex = /^(http|https):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
-    // Always set basic CORS headers for preflight and actual requests.
-    // The 'Access-Control-Allow-Origin' header is critical.
-    if (isOriginAllowed) {
+    // PRODUCTION DOMAINS - When deployed, include your actual frontend domains here.
+    // Example: const productionOrigins = ['https://mjifarms-frontend.vercel.app', 'https://your-firebase-hosting-domain.web.app'];
+    const productionOrigins = []; // Start with an empty array or your deployed frontend URL
+
+    // Determine the Access-Control-Allow-Origin header
+    if (origin && localhostRegex.test(origin)) {
+        // If the request is from localhost (any port), allow it for development.
+        // !!! WARNING: Using '*' is INSECURE FOR PRODUCTION. !!!
+        // You MUST change this back to specific origins or a more controlled setup for production.
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    } else if (origin && productionOrigins.includes(origin)) {
+        // If the request is from an allowed production origin, set that specific origin.
         res.setHeader('Access-Control-Allow-Origin', origin);
     } else {
-        // If the origin is NOT explicitly allowed, you might choose to:
-        // 1. Not set the header, blocking the request (most secure, default behavior if no header is set).
-        // 2. Set it to a default (e.g., your Vercel frontend URL, or even '*' for dev only).
-        // For local development, especially when Flutter's port changes, a common tactic is to
-        // allow all for OPTIONS and then filter for actual requests, or use the regex as above.
-        // If you are absolutely stuck for local dev, you can use a wildcard here temporarily,
-        // but it is INSECURE for production.
-        // res.setHeader('Access-Control-Allow-Origin', '*'); // INSECURE FOR PRODUCTION
+        // For any other unknown or disallowed origin, do NOT set the header.
+        // The browser will then block the request, ensuring security.
+        // This is the default secure behavior for unknown origins.
     }
 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Essential methods for your API
@@ -165,7 +146,7 @@ module.exports = async (req, res) => {
                 const topDisease = apiResponse.health_assessment.diseases[0];
                 diagnosisData.pestOrDisease = topDisease.name;
                 diagnosisData.confidenceLevel = topDisease.probability;
-                if (topDisease.suggestions && topDisease.suggestions.length > 0) {
+                if (topDisease.suggestions && apiResponse.suggestions.length > 0) {
                     diagnosisData.recommendations = topDisease.suggestions.map((s) => s.name);
                 }
             } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
