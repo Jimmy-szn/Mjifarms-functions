@@ -32,42 +32,10 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 
 // Main handler for all incoming requests
 module.exports = async (req, res) => {
-    // --- START CORS HEADERS: ENSURE THESE ARE SET EARLY AND CONSISTENTLY ---
-
-    const origin = req.headers.origin;
-
-    // Regex to match any localhost or 127.0.0.1 address with any port
-    const localhostRegex = /^(http|https):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-
-    // PRODUCTION DOMAINS - When deployed, include your actual frontend domains here.
-    // Example: const productionOrigins = ['https://mjifarms-frontend.vercel.app', 'https://your-firebase-hosting-domain.web.app'];
-    const productionOrigins = []; // Start with an empty array or your deployed frontend URL
-
-    // Determine the Access-Control-Allow-Origin header
-    if (origin && localhostRegex.test(origin)) {
-        // If the request is from localhost (any port), allow it for development.
-        // !!! WARNING: Using '*' is INSECURE FOR PRODUCTION. !!!
-        // You MUST change this back to specific origins or a more controlled setup for production.
-        res.setHeader('Access-Control-Allow-Origin', '*');
-    } else if (origin && productionOrigins.includes(origin)) {
-        // If the request is from an allowed production origin, set that specific origin.
-        res.setHeader('Access-Control-Allow-Origin', origin);
-    } else {
-        // For any other unknown or disallowed origin, do NOT set the header.
-        // The browser will then block the request, ensuring security.
-        // This is the default secure behavior for unknown origins.
-    }
-
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Essential methods for your API
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Headers your Flutter app sends
-    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 24 hours (1 day)
-
-    // Handle the OPTIONS preflight request. This MUST return 204 No Content.
-    // No further logic should run for OPTIONS requests after headers are set.
-    if (req.method === 'OPTIONS') {
-        return res.status(204).end();
-    }
-    // --- END CORS HEADERS ---
+    // --- CORS HEADERS ARE NOW HANDLED BY vercel.json ---
+    // The previous CORS logic (setting headers and handling OPTIONS method)
+    // has been moved to vercel.json for project-level control.
+    // This function will only process actual requests (GET, POST).
 
 
     // Check if the Plant.id API key is configured
