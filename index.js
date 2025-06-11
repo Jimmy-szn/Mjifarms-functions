@@ -4,16 +4,16 @@ const admin = require('firebase-admin');
 const axios = require('axios');
 
 // Initialize Firebase Admin SDK using environment variable
-const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT;
-if (!serviceAccountBase64) {
-    console.error("FIREBASE_SERVICE_ACCOUNT environment variable is not set. Please set it in Vercel project settings.");
-    module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Firebase credentials missing.' });
-    return;
+const serviceAccountBaseBase64 = process.env.FIREBASE_SERVICE_ACCOUNT;
+if (!serviceAccountBaseBase64) {
+  console.error("FIREBASE_SERVICE_ACCOUNT environment variable is not set. Please set it in Vercel project settings.");
+  module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Firebase credentials missing.' });
+  return;
 }
 
 let serviceAccount;
 try {
-    serviceAccount = JSON.parse(Buffer.from(serviceAccountBase64, 'base64').toString('utf8'));
+    serviceAccount = JSON.parse(Buffer.from(serviceAccountBaseBase64, 'base64').toString('utf8'));
 } catch (e) {
     console.error("Error parsing FIREBASE_SERVICE_ACCOUNT:", e);
     module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Invalid Firebase credentials format.' });
@@ -32,6 +32,46 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 
 // Main handler for all incoming requests
 module.exports = async (req, res) => {
+    // --- START CORS HEADERS ---
+    // Allow requests from specific origins during development (Flutter web local dev server)
+    // IMPORTANT: In production, narrow this down to your actual Flutter web app's domain(s)
+    const allowedOrigins = [
+        // --- ADD YOUR FLUTTER WEB APP'S CURRENT LOCALHOST PORT HERE ---
+        // When you run 'flutter run -d chrome', check the terminal for the URL,
+        // e.g., 'Serving `web` on http://localhost:55280/'
+        'http://localhost:55280', // As seen in your error, add this
+        'http://127.0.0.1:55280', // Add 127.0.0.1 too
+        'http://localhost:55281', // Example: other common Flutter local dev port
+        'http://127.0.0.1:55281',
+        'http://localhost:8080',  // Common web server port fallback
+        'http://127.0.0.1:8080',
+        'https://mjifarms-frontend.vercel.app', // Example: If your Flutter app is deployed to Vercel
+        // Add your actual production frontend domain here if applicable
+    ];
+
+    const origin = req.headers.origin;
+    if (allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+        // Fallback for origins not explicitly in allowedOrigins.
+        // For local dev, a wildcard might be used cautiously.
+        // For production, you typically *do not* use '*', but explicitly list domains.
+        // If you are only debugging locally, you could use '*' temporarily, but change for production.
+        // Example: Uncomment this line for temporary local debugging
+        // res.setHeader('Access-Control-Allow-Origin', '*'); 
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Allow GET, POST, and OPTIONS for preflight
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allow these headers
+    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 24 hours
+
+    // Handle preflight OPTIONS request
+    if (req.method === 'OPTIONS') {
+        return res.status(204).end(); // 204 No Content for successful preflight
+    }
+    // --- END CORS HEADERS ---
+
+
     // Check if the Plant.id API key is configured
     if (!PLANTID_API_KEY) {
         console.error("PLANTID_API_KEY is not configured in Vercel environment variables.");
@@ -64,7 +104,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        const PLANTID_ENDPOINT = 'https://api.plant.id/v2/health_assessment';
+        const PLANTID_ENDPOINT = 'https://api.plant.id/v3';
 
         try {
             // 2. Make API Call to Plant.id with Base64 image
@@ -103,7 +143,7 @@ module.exports = async (req, res) => {
                     diagnosisData.confidenceLevel = apiResponse.is_healthy.probability || 0;
                 }
             }
-
+            
             if (apiResponse.health_assessment && apiResponse.health_assessment.diseases && apiResponse.health_assessment.diseases.length > 0) {
                 const topDisease = apiResponse.health_assessment.diseases[0];
                 diagnosisData.pestOrDisease = topDisease.name;
@@ -117,9 +157,9 @@ module.exports = async (req, res) => {
                 diagnosisData.confidenceLevel = topSuggestion.probability;
                 diagnosisData.recommendations.push("No specific health issue detected, but the plant is identified as " + topSuggestion.plant_name + ".");
             }
-
+            
             if (diagnosisData.pestOrDisease === "Unknown Issue" && diagnosisData.recommendations.length === 0) {
-                diagnosisData.recommendations.push("Could not identify specific issue. Please try a clearer photo, different angle, or consult an expert.");
+                 diagnosisData.recommendations.push("Could not identify specific issue. Please try a clearer photo, different angle, or consult an expert.");
             }
 
             // 4. Store Diagnosis in Firestore
