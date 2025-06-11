@@ -32,40 +32,43 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 
 // Main handler for all incoming requests
 module.exports = async (req, res) => {
-    // --- START CORS HEADERS FOR TEMPORARY LOCAL DEBUGGING (WILDCARD) ---
-    // !!! WARNING: This is NOT secure for production. Use for local development ONLY. !!!
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Temporarily allow all origins for local dev
-    // You MUST change this back to specific origins (like in the commented-out 'allowedOrigins' block below)
-    // when deploying to production.
+    // --- START CORS HEADERS: PLACE THESE AT THE VERY BEGINNING OF YOUR HANDLER ---
 
-    // Commented out the specific allowedOrigins check for temporary wildcard use:
-    /*
+    // 1. **RECOMMENDED FOR PRODUCTION / PRECISE DEV:** List specific allowed origins.
+    // Uncomment THIS block and ensure your localhost port is here.
     const allowedOrigins = [
-        'http://localhost:55280',
-        'http://127.0.0.1:55280',
-        'http://localhost:55281',
+        'http://localhost:55280', // YOUR CURRENT FLUTTER LOCAL DEV PORT from the error
+        'http://127.0.0.1:55280', // Add 127.0.0.1 for the same port
+        'http://localhost:55281', // Another common dynamic port Flutter might use
         'http://127.0.0.1:55281',
-        'http://localhost:8080',
+        'http://localhost:8080',  // Common fallback for some local setups
         'http://127.0.0.1:8080',
-        'https://mjifarms-frontend.vercel.app', // Your production frontend URL
+        // --- ADD YOUR ACTUAL PRODUCTION FRONTEND URL(S) HERE WHEN DEPLOYED ---
+        // Example: 'https://mjifarms-frontend.vercel.app',
     ];
 
     const origin = req.headers.origin;
     if (allowedOrigins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
     } else {
-        // Fallback for origins not explicitly in allowedOrigins.
-        // For production, you typically *do not* use '*', but explicitly list domains.
+        // If the origin is NOT in your allowed list, you can either:
+        // A) NOT set the header (which will block access, the most secure default)
+        // B) Temporarily allow all for debugging (less secure - see option 2 below)
     }
-    */
 
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Allow GET, POST, and OPTIONS for preflight
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allow these headers
+    // 2. **TEMPORARY DEBUGGING (DANGER: NOT FOR PRODUCTION):** Use a wildcard.
+    // If you uncomment this line, make sure to comment out the 'allowedOrigins' block above.
+    // This allows *any* origin. Extremely insecure for a deployed API.
+    // res.setHeader('Access-Control-Allow-Origin', '*');
+
+
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Essential methods for your API
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Headers your Flutter app sends
     res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 24 hours
 
-    // Handle preflight OPTIONS request
+    // Handle the OPTIONS preflight request. This MUST return 204 No Content.
     if (req.method === 'OPTIONS') {
-        return res.status(204).end(); // 204 No Content for successful preflight
+        return res.status(204).end();
     }
     // --- END CORS HEADERS ---
 
@@ -78,7 +81,7 @@ module.exports = async (req, res) => {
 
     // Route requests based on URL path
     if (req.url === '/diagnosePlant' && req.method === 'POST') {
-        // --- Logic for Plant Diagnosis ---
+        // ... (rest of your diagnosePlant logic remains the same) ...
 
         // 1. Authenticate User (Verify Firebase ID Token)
         const authHeader = req.headers.authorization;
