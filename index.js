@@ -32,10 +32,10 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 
 // Main handler for all incoming requests
 module.exports = async (req, res) => {
-    // --- CORS HEADERS ARE NOW HANDLED BY vercel.json ---
-    // The previous CORS logic (setting headers and handling OPTIONS method)
-    // has been moved to vercel.json for project-level control.
-    // This function will only process actual requests (GET, POST).
+    // --- CORS HEADERS ARE NOW EXCLUSIVELY HANDLED BY vercel.json ---
+    // No res.setHeader() calls for CORS here.
+    // No specific handling for req.method === 'OPTIONS' here.
+    // Vercel's edge will apply the headers from vercel.json.
 
 
     // Check if the Plant.id API key is configured
@@ -45,8 +45,9 @@ module.exports = async (req, res) => {
     }
 
     // Route requests based on URL path
+    // This now handles POST requests to the root URL (/) for diagnosis
     if (req.url === '/' && req.method === 'POST') {
-        // ... (rest of your diagnosePlant logic remains the same) ...
+        console.log("Matched POST request to root URL for diagnosis."); // For debugging Vercel logs
 
         // 1. Authenticate User (Verify Firebase ID Token)
         const authHeader = req.headers.authorization;
@@ -70,7 +71,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        const PLANTID_ENDPOINT = 'https://api.plant.id/v3';
+        const PLANTID_ENDPOINT = 'https://api.plant.id/v2/health_assessment';
 
         try {
             // 2. Make API Call to Plant.id with Base64 image
@@ -152,7 +153,8 @@ module.exports = async (req, res) => {
             }
         }
     } else if (req.url === '/' && req.method === 'GET') {
-        // --- Default /api endpoint (Health Check) ---
+        console.log("Matched GET request to root URL for health check."); // For debugging Vercel logs
+        // --- Default / endpoint (Health Check) ---
         res.status(200).json({
             message: 'Welcome to the Urban Farming Assistant App API!',
             endpoint: req.url,
@@ -160,6 +162,7 @@ module.exports = async (req, res) => {
             status: 'ready'
         });
     } else {
+        console.log(`No matching route for Method = ${req.method}, URL = ${req.url}`); // For debugging Vercel logs
         // --- Handle other/unsupported routes ---
         res.status(404).json({ message: 'Not Found', endpoint: req.url, method: req.method });
     }
