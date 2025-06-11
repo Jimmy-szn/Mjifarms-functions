@@ -34,37 +34,44 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 module.exports = async (req, res) => {
     // --- START CORS HEADERS: PLACE THESE AT THE VERY BEGINNING OF YOUR HANDLER ---
 
-    // 1. **RECOMMENDED FOR PRODUCTION / PRECISE DEV:** List specific allowed origins.
-    // Uncomment THIS block and ensure your localhost port is here.
+    // Define allowed origins. Use a RegExp for localhost to handle dynamic ports.
+    // IMPORTANT: For production, only include your fixed deployed frontend domain(s).
     const allowedOrigins = [
-        'http://localhost:55280', // YOUR CURRENT FLUTTER LOCAL DEV PORT from the error
-        'http://127.0.0.1:55280', // Add 127.0.0.1 for the same port
-        'http://localhost:55281', // Another common dynamic port Flutter might use
-        'http://127.0.0.1:55281',
-        'http://localhost:8080',  // Common fallback for some local setups
-        'http://127.0.0.1:8080',
-        // --- ADD YOUR ACTUAL PRODUCTION FRONTEND URL(S) HERE WHEN DEPLOYED ---
-        // Example: 'https://mjifarms-frontend.vercel.app',
+        // Production Frontend Domain(s) - Add these when your Flutter web app is deployed:
+         'https://mjifarms-backend.vercel.app', // Example: If your Flutter app is deployed to Vercel
+        // 'https://your-firebase-hosting-domain.web.app', // Example: If deployed to Firebase Hosting
+
+        // Development Localhost Domains (Handles dynamic ports)
+        /^(http|https):\/\/(localhost|127\.0\.0\.1)(:\d+)?$/, // Allows any port on localhost or 127.0.0.1
     ];
 
     const origin = req.headers.origin;
-    if (allowedOrigins.includes(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-    } else {
-        // If the origin is NOT in your allowed list, you can either:
-        // A) NOT set the header (which will block access, the most secure default)
-        // B) Temporarily allow all for debugging (less secure - see option 2 below)
+    let isOriginAllowed = false;
+
+    if (origin) { // Ensure origin header exists
+        isOriginAllowed = allowedOrigins.some(allowed => {
+            if (typeof allowed === 'string') {
+                // Exact string match for production domains
+                return allowed === origin;
+            } else if (allowed instanceof RegExp) {
+                // Regex match for dynamic localhost ports
+                return allowed.test(origin);
+            }
+            return false;
+        });
     }
 
-    // 2. **TEMPORARY DEBUGGING (DANGER: NOT FOR PRODUCTION):** Use a wildcard.
-    // If you uncomment this line, make sure to comment out the 'allowedOrigins' block above.
-    // This allows *any* origin. Extremely insecure for a deployed API.
-    // res.setHeader('Access-Control-Allow-Origin', '*');
-
+    if (isOriginAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    } else {
+        // If the origin is NOT in your allowed list, do NOT set the header.
+        // The browser will then block the request, ensuring security.
+        // Do NOT use '*' in production.
+    }
 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Essential methods for your API
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Headers your Flutter app sends
-    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 24 hours
+    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 24 hours (1 day)
 
     // Handle the OPTIONS preflight request. This MUST return 204 No Content.
     if (req.method === 'OPTIONS') {
@@ -105,7 +112,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        const PLANTID_ENDPOINT = 'https://api.plant.id/v3';
+        const PLANTID_ENDPOINT = 'https://api.plant.id/v2/health_assessment';
 
         try {
             // 2. Make API Call to Plant.id with Base64 image
