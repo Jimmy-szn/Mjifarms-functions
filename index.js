@@ -37,6 +37,7 @@ module.exports = async (req, res) => {
     // No specific handling for req.method === 'OPTIONS' here.
     // Vercel's edge will apply the headers from vercel.json.
 
+    console.log(`Incoming Request: Method = ${req.method}, URL = ${req.url}`); // Log incoming request details
 
     // Check if the Plant.id API key is configured
     if (!PLANTID_API_KEY) {
@@ -44,9 +45,12 @@ module.exports = async (req, res) => {
         return res.status(500).json({ status: 'error', message: 'Server Error: Plant.id API Key not configured.' });
     }
 
+    // Define a regex to match the root URL variations ('/' or '')
+    const isRootUrl = (url) => url === '/' || url === '';
+
     // Route requests based on URL path
-    // This now handles POST requests to the root URL (/) for diagnosis
-    if (req.url === '/' && req.method === 'POST') {
+    // Now handles POST requests to the root URL (/) for diagnosis
+    if (isRootUrl(req.url) && req.method === 'POST') { // <-- More robust root URL check
         console.log("Matched POST request to root URL for diagnosis."); // For debugging Vercel logs
 
         // 1. Authenticate User (Verify Firebase ID Token)
@@ -71,7 +75,7 @@ module.exports = async (req, res) => {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        const PLANTID_ENDPOINT = 'https://api.plant.id/v2/health_assessment';
+        const PLANTID_ENDPOINT = 'https://api.plant.id/v3';
 
         try {
             // 2. Make API Call to Plant.id with Base64 image
@@ -152,7 +156,7 @@ module.exports = async (req, res) => {
                 return res.status(500).json({ status: 'error', message: `Failed to diagnose plant: ${error.message}` });
             }
         }
-    } else if (req.url === '/' && req.method === 'GET') {
+    } else if (isRootUrl(req.url) && req.method === 'GET') { // <-- More robust root URL check
         console.log("Matched GET request to root URL for health check."); // For debugging Vercel logs
         // --- Default / endpoint (Health Check) ---
         res.status(200).json({
