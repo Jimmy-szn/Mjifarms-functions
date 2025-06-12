@@ -9,7 +9,7 @@
         },
         {
           "key": "Access-Control-Allow-Origin",
-          "value": "*" 
+          "value": "*"
         },
         {
           "key": "Access-Control-Allow-Methods",
@@ -17,15 +17,22 @@
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization" 
+          "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization"
         }
       ]
     }
   ],
   "rewrites": [
     {
-      "source": "/(.*)",           
-      "destination": "/api/index.js" 
+      "source": "/(.*)",
+      "has": [
+        { "type": "header", "key": "Access-Control-Request-Method", "value": "OPTIONS" }
+      ],
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.js"
     }
   ]
 }
