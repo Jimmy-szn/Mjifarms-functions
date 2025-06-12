@@ -1,14 +1,15 @@
-// index.js
+// api/index.js
 
 const admin = require('firebase-admin');
 const axios = require('axios');
 
 // Initialize Firebase Admin SDK using environment variable
-const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT; // Corrected variable name
+const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT;
 if (!serviceAccountBase64) {
   console.error("FIREBASE_SERVICE_ACCOUNT environment variable is not set. Please set it in Vercel project settings.");
+  // Return a function that always responds with an error if critical env var is missing
   module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Firebase credentials missing.' });
-  return;
+  return; // Exit module loading
 }
 
 let serviceAccount;
@@ -17,30 +18,37 @@ try {
 } catch (e) {
     console.error("Error parsing FIREBASE_SERVICE_ACCOUNT:", e);
     module.exports = (req, res) => res.status(500).json({ status: 'error', message: 'Server configuration error: Invalid Firebase credentials format.' });
-    return;
+    return; // Exit module loading
 }
 
-// Initialize Firebase Admin SDK only once for Realtime Database
+// Initialize Firebase Admin SDK only once (for Realtime Database)
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         // IMPORTANT: Replace with your Firebase Realtime Database URL
-        databaseURL: "https://YOUR-FIREBASE-PROJECT-ID-default-rtdb.firebaseio.com" 
+        databaseURL: "https://project-theta-a1044-default-rtdb.firebaseio.com/" // Placeholder, replace with your actual URL
     });
 }
-// Get a reference to the Realtime Database service
-const db = admin.database();
+const db = admin.database(); // Get Realtime Database instance
 
 const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 
 // Main handler for all incoming requests
 module.exports = async (req, res) => {
-    // --- CORS HEADERS ARE NOW EXCLUSIVELY HANDLED BY vercel.json ---
-    // No res.setHeader() calls for CORS here.
-    // No specific handling for req.method === 'OPTIONS' here.
-    // Vercel's edge will apply the headers from vercel.json.
+    // --- START CORS HEADERS (Explicitly handled within the function) ---
+    // These headers are set for every response, including OPTIONS.
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Temporarily allow all origins for debugging
+                                                       // !!! IMPORTANT: CHANGE THIS TO YOUR SPECIFIC PRODUCTION FRONTEND DOMAIN(S) !!!
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Allow methods
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allow client headers
+    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 24 hours
 
-    console.log(`Incoming Request: Method = ${req.method}, URL = ${req.url}`); // Log incoming request details
+    // Handle OPTIONS preflight request
+    if (req.method === 'OPTIONS') {
+        // For preflight, simply send 204 No Content with CORS headers
+        return res.status(204).end();
+    }
+    // --- END CORS HEADERS ---
 
     // Check if the Plant.id API key is configured
     if (!PLANTID_API_KEY) {
@@ -52,7 +60,7 @@ module.exports = async (req, res) => {
     const isRootUrl = (url) => url === '/' || url === '';
 
     // --- REVISED ROUTING LOGIC START ---
-    // Now, handle POST requests for diagnosis at the '/diagnose' path
+    // Handle POST requests for diagnosis at the '/diagnose' path
     if (req.url === '/diagnose' && req.method === 'POST') {
         console.log("Matched POST request to /diagnose for plant diagnosis."); // For debugging Vercel logs
 
@@ -78,24 +86,21 @@ module.exports = async (req, res) => {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        // Updated PLANTID_ENDPOINT to v3 and added details parameter
-        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; 
+        // --- UPDATED PLANTID_ENDPOINT and PARAMETERS for v3 health_assessment ---
+        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; // Corrected to v3
+        const DETAILS_PARAMS = [
+            "local_name", "description", "url", "treatment",
+            "classification", "common_names", "cause"
+        ];
 
         try {
-            // 2. Make API Call to Plant.id with Base64 image
+            // 2. Make API Call to Plant.id with Base64 image and v3 details
             const apiCallResponse = await axios.post(PLANTID_ENDPOINT, {
                 api_key: PLANTID_API_KEY,
                 images: [base64Image], // Sending Base64 string directly
-                organs: ['leaf', 'stem', 'flower', 'fruit'],
-                disease_details: [ // Updated to use the 'details' parameter values
-                    "local_name",
-                    "description",
-                    "url",
-                    "treatment",
-                    "classification",
-                    "common_names",
-                    "cause"
-                ]
+                // REMOVED 'organs' parameter as it's not valid for Plant.id v3 health_assessment
+                details: DETAILS_PARAMS, // Pass the array of desired details
+                health: "only" // Ensures only health assessment, not general identification
             }, {
                 headers: {
                     'Content-Type': 'application/json'
@@ -108,7 +113,6 @@ module.exports = async (req, res) => {
             // 3. Process API Response and Extract Diagnosis Data
             const diagnosisData = {
                 date: admin.database.ServerValue.TIMESTAMP, // Use Realtime Database server timestamp
-                // originalImageURL: imageUrl, // No direct URL if not stored persistently
                 source: "AI_Plant.id",
                 confidenceLevel: 0,
                 pestOrDisease: "Unknown Issue",
@@ -134,10 +138,11 @@ module.exports = async (req, res) => {
                 if (topDisease.suggestions && topDisease.suggestions.length > 0) {
                     diagnosisData.recommendations = topDisease.suggestions.map((s) => s.name);
                 }
-                // Extracting additional details if available from the API response
+                // Extracting additional details as per v3 'details' parameters
                 if (topDisease.description) diagnosisData.description = topDisease.description.value;
-                if (topDisease.treatment) diagnosisData.treatment = topDisease.treatment.api_name; // Assuming it's an object with api_name, if direct value, adjust
+                if (topDisease.treatment) diagnosisData.treatment = topDisease.treatment.api_name; // Adjust based on actual API response structure
                 if (topDisease.classification) diagnosisData.classification = topDisease.classification.taxonomy;
+                if (topDisease.cause) diagnosisData.cause = topDisease.cause.name;
             } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
                 const topSuggestion = apiResponse.suggestions[0];
                 diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
