@@ -37,16 +37,14 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 module.exports = async (req, res) => {
     // --- START CORS HEADERS (Explicitly handled within the function) ---
     // These headers are set for every response, including OPTIONS.
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Temporarily allow all origins for debugging
-                                                       // !!! IMPORTANT: CHANGE THIS TO YOUR SPECIFIC PRODUCTION FRONTEND DOMAIN(S) !!!
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Allow methods
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allow client headers
-    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight response for 24 hours
+    res.setHeader('Access-Control-Allow-Origin', '*'); // CHANGED: Still wildcard for dev
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // CHANGED: Explicitly allowing OPTIONS
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // CHANGED: Allowing necessary headers
+    res.setHeader('Access-Control-Max-Age', '86400'); // CHANGED: Caching preflight response
 
-    // Handle OPTIONS preflight request
+    // CHANGED: Handle OPTIONS preflight request - crucial for CORS
     if (req.method === 'OPTIONS') {
-        // For preflight, simply send 204 No Content with CORS headers
-        return res.status(204).end();
+        return res.status(204).end(); // 204 No Content for successful preflight
     }
     // --- END CORS HEADERS ---
 
@@ -61,7 +59,7 @@ module.exports = async (req, res) => {
 
     // --- REVISED ROUTING LOGIC START ---
     // Handle POST requests for diagnosis at the '/diagnose' path
-    if (req.url === '/diagnose' && req.method === 'POST') {
+    if (req.url === '/diagnose' && req.method === 'POST') { // CHANGED: Explicitly checking for '/diagnose' path and POST method
         console.log("Matched POST request to /diagnose for plant diagnosis."); // For debugging Vercel logs
 
         // 1. Authenticate User (Verify Firebase ID Token)
@@ -80,24 +78,24 @@ module.exports = async (req, res) => {
             return res.status(401).json({ message: 'Unauthorized: Invalid token.', error: error.message });
         }
 
-        // Destructure latitude, longitude from req.body (optional from Flutter)
+        // CHANGED: Destructure latitude, longitude from req.body (optional from Flutter)
         const { base64Image, cropLogId, plantId, latitude, longitude } = req.body; 
 
         if (!base64Image || !cropLogId || !plantId) {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        // --- STRICTLY MATCHING CURL EXAMPLE FOR PLANT.ID API v3 health_assessment ---
-        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; 
+        // --- CHANGED: STRICTLY MATCHING CURL EXAMPLE FOR PLANT.ID API v3 health_assessment ---
+        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; // CHANGED: Corrected to v3 health_assessment
         
-        // Construct the payload as per the curl example
+        // CHANGED: Construct the payload as per the curl example
         const plantIdPayload = {
             api_key: PLANTID_API_KEY,
             images: [base64Image],
-            // Only include latitude and longitude if they are provided from Flutter
+            // CHANGED: Only include latitude and longitude if they are provided from Flutter
             ...(latitude !== undefined && latitude !== null && { latitude: latitude }),
             ...(longitude !== undefined && longitude !== null && { longitude: longitude }),
-            similar_images: true // As per curl example
+            similar_images: true // CHANGED: As per curl example
         };
 
         try {
@@ -118,9 +116,11 @@ module.exports = async (req, res) => {
                 confidenceLevel: 0,
                 pestOrDisease: "Unknown Issue",
                 recommendations: [],
+                relatedDiseaseImages: [], // CHANGED: NEW FIELD: To store URLs of related disease images
                 rawApiResponse: apiResponse // Store raw response for debugging/future analysis
             };
 
+            // Process 'is_healthy' status
             if (apiResponse.is_healthy && apiResponse.is_healthy.binary) {
                 if (apiResponse.is_healthy.binary === 'healthy') {
                     diagnosisData.pestOrDisease = "Healthy";
@@ -132,23 +132,41 @@ module.exports = async (req, res) => {
                 }
             }
             
-            // Note: If 'disease_details' or 'details' are required for this section,
-            // they must be requested via a *separate* call to Plant.id API's /details endpoint,
-            // or by checking available modifiers in the *health_assessment* endpoint if they get added back.
-            // The provided curl example for health_assessment does not include them in the request body.
+            // CHANGED: Process detailed health assessment diseases and extract images
             if (apiResponse.health_assessment && apiResponse.health_assessment.diseases && apiResponse.health_assessment.diseases.length > 0) {
+                // Get the top disease for primary display
                 const topDisease = apiResponse.health_assessment.diseases[0];
                 diagnosisData.pestOrDisease = topDisease.name;
                 diagnosisData.confidenceLevel = topDisease.probability;
                 if (topDisease.suggestions && topDisease.suggestions.length > 0) {
                     diagnosisData.recommendations = topDisease.suggestions.map((s) => s.name);
                 }
-                // No direct extraction of description, treatment, etc., here as 'details' param is removed
+
+                // CHANGED: Extract similar images for ALL identified diseases (not just top one)
+                apiResponse.health_assessment.diseases.forEach(disease => {
+                    if (disease.similar_images && Array.isArray(disease.similar_images)) {
+                        disease.similar_images.forEach(img => {
+                            if (img.url) {
+                                diagnosisData.relatedDiseaseImages.push(img.url);
+                            }
+                        });
+                    }
+                });
             } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
+                // Fallback for general plant identification if no health assessment is clear
                 const topSuggestion = apiResponse.suggestions[0];
                 diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
                 diagnosisData.confidenceLevel = topSuggestion.probability;
                 diagnosisData.recommendations.push("No specific health issue detected, but the plant is identified as " + topSuggestion.plant_name + ".");
+                
+                // CHANGED: Also extract similar images from general suggestions if available
+                if (topSuggestion.similar_images && Array.isArray(topSuggestion.similar_images)) {
+                    topSuggestion.similar_images.forEach(img => {
+                        if (img.url) {
+                            diagnosisData.relatedDiseaseImages.push(img.url);
+                        }
+                    });
+                }
             }
             
             if (diagnosisData.pestOrDisease === "Unknown Issue" && diagnosisData.recommendations.length === 0) {
