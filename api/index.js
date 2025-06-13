@@ -26,7 +26,7 @@ if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         // IMPORTANT: Replace with your Firebase Realtime Database URL
-        databaseURL: "https://project-theta-a1044-default-rtdb.firebaseio.com/users/D92neEtTykdQrxGkhhvRfrJDfkQ2" // Placeholder, replace with your actual URL
+        databaseURL: "https://project-theta-a1044-default-rtdb.firebaseio.com/" // Placeholder, replace with your actual URL
     });
 }
 const db = admin.database(); // Get Realtime Database instance
@@ -80,29 +80,28 @@ module.exports = async (req, res) => {
             return res.status(401).json({ message: 'Unauthorized: Invalid token.', error: error.message });
         }
 
-        // Destructure latitude, longitude from req.body (optional from Flutter)
-        const { base64Image, cropLogId, plantId, latitude, longitude } = req.body; 
+        const { base64Image, cropLogId, plantId } = req.body; // Expecting base64Image now
 
         if (!base64Image || !cropLogId || !plantId) {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        // --- STRICTLY MATCHING CURL EXAMPLE FOR PLANT.ID API v3 health_assessment ---
-        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; 
-        
-        // Construct the payload as per the curl example
-        const plantIdPayload = {
-            api_key: PLANTID_API_KEY,
-            images: [base64Image],
-            // Only include latitude and longitude if they are provided from Flutter
-            ...(latitude !== undefined && latitude !== null && { latitude: latitude }),
-            ...(longitude !== undefined && longitude !== null && { longitude: longitude }),
-            similar_images: true // As per curl example
-        };
+        // --- UPDATED PLANTID_ENDPOINT and PARAMETERS for v3 health_assessment ---
+        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; // Corrected to v3
+        const DETAILS_PARAMS = [
+            "local_name", "description", "url", "treatment",
+            "classification", "common_names", "cause"
+        ];
 
         try {
-            // 2. Make API Call to Plant.id with the strictly formatted payload
-            const apiCallResponse = await axios.post(PLANTID_ENDPOINT, plantIdPayload, {
+            // 2. Make API Call to Plant.id with Base64 image and v3 details
+            const apiCallResponse = await axios.post(PLANTID_ENDPOINT, {
+                api_key: PLANTID_API_KEY,
+                images: [base64Image], // Sending Base64 string directly
+                // REMOVED 'organs' parameter as it's not valid for Plant.id v3 health_assessment
+                details: DETAILS_PARAMS, // Pass the array of desired details
+                health: "only" // Ensures only health assessment, not general identification
+            }, {
                 headers: {
                     'Content-Type': 'application/json'
                 }
@@ -132,10 +131,6 @@ module.exports = async (req, res) => {
                 }
             }
             
-            // Note: If 'disease_details' or 'details' are required for this section,
-            // they must be requested via a *separate* call to Plant.id API's /details endpoint,
-            // or by checking available modifiers in the *health_assessment* endpoint if they get added back.
-            // The provided curl example for health_assessment does not include them in the request body.
             if (apiResponse.health_assessment && apiResponse.health_assessment.diseases && apiResponse.health_assessment.diseases.length > 0) {
                 const topDisease = apiResponse.health_assessment.diseases[0];
                 diagnosisData.pestOrDisease = topDisease.name;
@@ -143,7 +138,11 @@ module.exports = async (req, res) => {
                 if (topDisease.suggestions && topDisease.suggestions.length > 0) {
                     diagnosisData.recommendations = topDisease.suggestions.map((s) => s.name);
                 }
-                // No direct extraction of description, treatment, etc., here as 'details' param is removed
+                // Extracting additional details as per v3 'details' parameters
+                if (topDisease.description) diagnosisData.description = topDisease.description.value;
+                if (topDisease.treatment) diagnosisData.treatment = topDisease.treatment.api_name; // Adjust based on actual API response structure
+                if (topDisease.classification) diagnosisData.classification = topDisease.classification.taxonomy;
+                if (topDisease.cause) diagnosisData.cause = topDisease.cause.name;
             } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
                 const topSuggestion = apiResponse.suggestions[0];
                 diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
