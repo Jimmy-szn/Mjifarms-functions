@@ -122,69 +122,69 @@ module.exports = async (req, res) => {
 
             const result = apiResponse.result;
 
-            if (result && result.is_healthy && typeof result.is_healthy.binary !== 'undefined') {
-                if (result.is_healthy.binary === true) {
-                    diagnosisData.pestOrDisease = "Healthy";
-                    diagnosisData.confidenceLevel = result.is_healthy.probability * 100;
-                    diagnosisData.recommendations.push("Your plant appears healthy!");
-                } else { // Plant is unhealthy, look for specific diseases
-                    if (result.disease && result.disease.suggestions && result.disease.suggestions.length > 0) {
-                        const topSuggestion = result.disease.suggestions[0];
-                        diagnosisData.pestOrDisease = topSuggestion.name;
-                        diagnosisData.confidenceLevel = topSuggestion.probability * 100;
+            if (result) {
+                // First, try to get a specific disease/pest suggestion
+                if (result.disease && result.disease.suggestions && result.disease.suggestions.length > 0) {
+                    const topSuggestion = result.disease.suggestions[0];
+                    diagnosisData.pestOrDisease = topSuggestion.name; // Use the name from the top suggestion
+                    diagnosisData.confidenceLevel = topSuggestion.probability * 100; // Convert to percentage
 
-                        // Extract recommendations from details if available
-                        // Note: Your sample JSON does NOT have 'description' or 'treatment' in 'details',
-                        // so these will likely be empty unless you modify the Plant.id API call to request them.
-                        if (topSuggestion.details) {
-                            if (topSuggestion.details.description) {
-                                diagnosisData.recommendations.push(topSuggestion.details.description.value);
-                            }
-                            if (topSuggestion.details.treatment) {
-                                if (Array.isArray(topSuggestion.details.treatment)) {
-                                    diagnosisData.recommendations.push(...topSuggestion.details.treatment.map(t => t.value || t));
-                                } else if (topSuggestion.details.treatment.value) {
-                                    diagnosisData.recommendations.push(topSuggestion.details.treatment.value);
-                                }
+                    // Extract recommendations from details if available
+                    // Note: Your sample JSON does NOT have 'description' or 'treatment' in 'details',
+                    // so these will likely be empty unless you modify the Plant.id API call to request them.
+                    if (topSuggestion.details) {
+                        if (topSuggestion.details.description) {
+                            diagnosisData.recommendations.push(topSuggestion.details.description.value);
+                        }
+                        if (topSuggestion.details.treatment) {
+                            if (Array.isArray(topSuggestion.details.treatment)) {
+                                diagnosisData.recommendations.push(...topSuggestion.details.treatment.map(t => t.value || t));
+                            } else if (topSuggestion.details.treatment.value) {
+                                diagnosisData.recommendations.push(topSuggestion.details.treatment.value);
                             }
                         }
-                        
-                        // Fallback recommendation if specific details weren't extracted
-                        if (diagnosisData.recommendations.length === 0) {
-                            diagnosisData.recommendations.push(`Possible issue: ${topSuggestion.name}.`);
-                        }
-
-                        // Extract similar images
-                        result.disease.suggestions.forEach(suggestion => {
-                            if (suggestion.similar_images && Array.isArray(suggestion.similar_images)) {
-                                suggestion.similar_images.forEach(img => {
-                                    if (img.url) {
-                                        diagnosisData.relatedDiseaseImages.push(img.url);
-                                    }
-                                });
-                            }
-                        });
-                    } else {
-                        // Plant is unhealthy but no specific disease suggestions found
-                        diagnosisData.pestOrDisease = "Unhealthy - Specific issue pending analysis.";
-                        diagnosisData.confidenceLevel = result.is_healthy.probability * 100; // Still show overall unhealthiness confidence
-                        diagnosisData.recommendations.push("Could not identify a specific issue despite appearing unhealthy. Please try a clearer photo, different angle, or consult an expert.");
                     }
-                }
-            } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
-                // This block handles cases where it's a general plant identification, not a health assessment.
-                // This is less likely with health=only in payload.
-                const topSuggestion = apiResponse.suggestions[0];
-                diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
-                diagnosisData.confidenceLevel = topSuggestion.probability * 100;
-                diagnosisData.recommendations.push("No specific health issue detected, but the plant is identified as " + topSuggestion.plant_name + ".");
-                
-                if (topSuggestion.similar_images && Array.isArray(topSuggestion.similar_images)) {
-                    topSuggestion.similar_images.forEach(img => {
-                        if (img.url) {
-                            diagnosisData.relatedDiseaseImages.push(img.url);
+                    
+                    // Fallback recommendation if specific details weren't extracted
+                    if (diagnosisData.recommendations.length === 0) {
+                        diagnosisData.recommendations.push(`Possible issue: ${topSuggestion.name}.`);
+                    }
+
+                    // Extract similar images for ALL identified suggestions
+                    result.disease.suggestions.forEach(suggestion => {
+                        if (suggestion.similar_images && Array.isArray(suggestion.similar_images)) {
+                            suggestion.similar_images.forEach(img => {
+                                if (img.url) {
+                                    diagnosisData.relatedDiseaseImages.push(img.url);
+                                }
+                            });
                         }
                     });
+                } else if (result.is_healthy && typeof result.is_healthy.binary !== 'undefined') {
+                    // If no specific disease suggestion, check the overall health status
+                    if (result.is_healthy.binary === true) {
+                        diagnosisData.pestOrDisease = "Healthy";
+                        diagnosisData.confidenceLevel = result.is_healthy.probability * 100;
+                        diagnosisData.recommendations.push("Your plant appears healthy!");
+                    } else if (result.is_healthy.binary === false) {
+                        diagnosisData.pestOrDisease = "Unhealthy - No specific issue identified.";
+                        diagnosisData.confidenceLevel = result.is_healthy.probability * 100;
+                        diagnosisData.recommendations.push("The plant appears unhealthy, but a specific issue could not be identified. Please try a clearer photo or consult an expert.");
+                    }
+                } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0) {
+                    // Fallback for general plant identification if neither health nor disease is clear
+                    const topSuggestion = apiResponse.suggestions[0];
+                    diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
+                    diagnosisData.confidenceLevel = topSuggestion.probability * 100;
+                    diagnosisData.recommendations.push("No specific health issue detected, but the plant is identified as " + topSuggestion.plant_name + ".");
+                    
+                    if (topSuggestion.similar_images && Array.isArray(topSuggestion.similar_images)) {
+                        topSuggestion.similar_images.forEach(img => {
+                            if (img.url) {
+                                diagnosisData.relatedDiseaseImages.push(img.url);
+                            }
+                        });
+                    }
                 }
             }
             
