@@ -79,7 +79,7 @@ module.exports = async (req, res) => {
         }
 
         // CHANGED: Destructure latitude, longitude from req.body (optional from Flutter)
-        const { base64Image, cropLogId, plantId, latitude, longitude } = req.body;
+        const { base64Image, cropLogId, plantId, latitude, longitude } = req.body; 
 
         if (!base64Image || !cropLogId || !plantId) {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
@@ -87,7 +87,7 @@ module.exports = async (req, res) => {
 
         // --- CHANGED: STRICTLY MATCHING CURL EXAMPLE FOR PLANT.ID API v3 health_assessment ---
         const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; // CHANGED: Corrected to v3 health_assessment
-
+        
         // CHANGED: Construct the payload as per the curl example
         const plantIdPayload = {
             api_key: PLANTID_API_KEY,
@@ -110,88 +110,75 @@ module.exports = async (req, res) => {
             console.log('Plant.id API Response:', JSON.stringify(apiResponse, null, 2));
 
             // 3. Process API Response and Extract Diagnosis Data
-            // Assuming apiResponse is the parsed JSON object you provided
-            // i.e., const apiResponse = apiCallResponse.data;
-
-            let diagnosisDetails = {
-                pestOrDisease: "Unknown Issue",
+            const diagnosisData = {
+                date: admin.database.ServerValue.TIMESTAMP, // Use Realtime Database server timestamp
+                source: "AI_Plant.id",
                 confidenceLevel: 0,
-                recommendations: [], // Will be populated if available
-                relatedDiseaseImages: [],
+                pestOrDisease: "Unknown Issue",
+                recommendations: [],
+                relatedDiseaseImages: [], // CHANGED: NEW FIELD: To store URLs of related disease images
+                rawApiResponse: apiResponse // Store raw response for debugging/future analysis
             };
 
-            if (apiResponse && apiResponse.result) {
-                const result = apiResponse.result;
-
-                // 1. Determine if the plant is healthy or unhealthy
-                if (result.is_healthy && result.is_healthy.binary === true) {
-                    diagnosisDetails.pestOrDisease = "Plant appears healthy!";
-                    diagnosisDetails.confidenceLevel = result.is_healthy.probability * 100;
-                    // Healthy plants might not have specific recommendations or related images
-                } else if (result.disease && result.disease.suggestions && result.disease.suggestions.length > 0) {
-                    // 2. Get the top (most probable) suggestion if unhealthy
-                    const topSuggestion = result.disease.suggestions[0];
-                    diagnosisDetails.pestOrDisease = topSuggestion.name;
-                    diagnosisDetails.confidenceLevel = topSuggestion.probability * 100; // Convert to percentage
-
-                    // 3. Extract recommendations (if 'details' were requested in Plant.id API call)
-                    // IMPORTANT: The 'details' object in your provided JSON example does NOT contain 'description' or 'treatment'.
-                    // If you want recommendations, you MUST include 'details: ["description", "treatment"]'
-                    // in your request payload to the Plant.id API when calling it from Vercel.
-                    // For example:
-                    // 'details': ["description", "treatment", "url"],
-                    if (topSuggestion.details) {
-                        if (topSuggestion.details.description) {
-                            diagnosisDetails.recommendations.push(topSuggestion.details.description);
-                        }
-                        if (topSuggestion.details.treatment) {
-                            // If treatment is an array of strings, add each. If it's a single string, add it.
-                            if (Array.isArray(topSuggestion.details.treatment)) {
-                                diagnosisDetails.recommendations.push(...topSuggestion.details.treatment);
-                            } else if (typeof topSuggestion.details.treatment === 'string') {
-                                diagnosisDetails.recommendations.push(topSuggestion.details.treatment);
-                            }
-                        }
-                        // You might also find common_names, taxonomy, etc., under details if requested.
-                    }
-
-                    // 4. Extract similar image URLs
-                    if (topSuggestion.similar_images && topSuggestion.similar_images.length > 0) {
-                        diagnosisDetails.relatedDiseaseImages = topSuggestion.similar_images.map(img => img.url);
-                    }
-                } else {
-                    diagnosisDetails.pestOrDisease = "Could not determine plant health or specific issue.";
-                }
-
-                // 5. Consider the 'question' field for interactive diagnosis (optional, for future enhancements)
-                // The 'question' field (e.g., result.disease.question.text, result.disease.question.options)
-                // can be used to ask follow-up questions to the farmer for more accurate diagnosis.
-                // Your current Flutter UI doesn't support this interactivity, but it's available in the API response.
-                if (result.disease && result.disease.question) {
-                    console.log("Plant.id suggested a follow-up question:", result.disease.question.text);
-                    // You could pass this question back to Flutter and prompt the user for a Yes/No answer
-                    // to send another diagnosis request with the selected option.
+            // Process 'is_healthy' status
+            if (apiResponse.is_healthy && typeof apiResponse.is_healthy.binary !== 'undefined') {
+                if (apiResponse.is_healthy.binary === 'healthy') {
+                    diagnosisData.pestOrDisease = "Healthy";
+                    diagnosisData.confidenceLevel = apiResponse.is_healthy.probability || 1.0;
+                    diagnosisData.recommendations.push("Your plant appears healthy!");
+                } else if (apiResponse.is_healthy.binary === 'unhealthy') {
+                    diagnosisData.pestOrDisease = "Unhealthy - Specific issue pending analysis.";
+                    diagnosisData.confidenceLevel = apiResponse.is_healthy.probability || 0;
                 }
             }
+            
+            // CHANGED: Process detailed health assessment diseases and extract images
+            if (apiResponse.health_assessment && apiResponse.health_assessment.diseases && apiResponse.health_assessment.diseases.length > 0) {
+                // Get the top disease for primary display
+                const topDisease = apiResponse.health_assessment.diseases[0];
+                diagnosisData.pestOrDisease = topDisease.name;
+                diagnosisData.confidenceLevel = topDisease.probability;
+                if (topDisease.suggestions && topDisease.suggestions.length > 0) {
+                    diagnosisData.recommendations = topDisease.suggestions.map((s) => s.name);
+                }
 
-            // This `diagnosisDetails` object is what you would send back to your Flutter app
-            // and save to Firebase Realtime Database.
-            console.log('Processed Diagnosis Details for Farmer:', diagnosisDetails);
-
-            // Example of how you would respond from your Vercel function:
-            // res.status(200).json({
-            //     status: 'success',
-            //     message: 'Diagnosis successful',
-            //     diagnosisId: newDiagnosisRef.key, // Assuming you save it to Firebase and get a key
-            //     diagnosisDetails: diagnosisDetails // Send the processed data to Flutter
-            // });
+                // CHANGED: Extract similar images for ALL identified diseases (not just top one)
+                apiResponse.health_assessment.diseases.forEach(disease => {
+                    if (disease.similar_images && Array.isArray(disease.similar_images)) {
+                        disease.similar_images.forEach(img => {
+                            if (img.url) {
+                                diagnosisData.relatedDiseaseImages.push(img.url);
+                            }
+                        });
+                    }
+                });
+            } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
+                // Fallback for general plant identification if no health assessment is clear
+                const topSuggestion = apiResponse.suggestions[0];
+                diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
+                diagnosisData.confidenceLevel = topSuggestion.probability;
+                diagnosisData.recommendations.push("No specific health issue detected, but the plant is identified as " + topSuggestion.plant_name + ".");
+                
+                // CHANGED: Also extract similar images from general suggestions if available
+                if (topSuggestion.similar_images && Array.isArray(topSuggestion.similar_images)) {
+                    topSuggestion.similar_images.forEach(img => {
+                        if (img.url) {
+                            diagnosisData.relatedDiseaseImages.push(img.url);
+                        }
+                    });
+                }
+            }
+            
+            if (diagnosisData.pestOrDisease === "Unknown Issue" && diagnosisData.recommendations.length === 0) {
+                diagnosisData.recommendations.push("Could not identify specific issue. Please try a clearer photo, different angle, or consult an expert.");
+            }
 
             // 4. Store Diagnosis in Realtime Database
             // Structure: /crop_logs/{cropLogId}/diagnoses/{diagnosisId}
             const diagnosisRef = db.ref(`crop_logs/${cropLogId}/diagnoses`).push(); // Generates a unique key
             const diagnosisId = diagnosisRef.key; // Get the generated key
 
-            await diagnosisRef.set(diagnosisDetails); // Save the data
+            await diagnosisRef.set(diagnosisData); // Save the data
 
             // 5. Send Response to Flutter App
             return res.status(200).json({ status: 'success', diagnosisId: diagnosisId, diagnosisDetails: diagnosisData });
