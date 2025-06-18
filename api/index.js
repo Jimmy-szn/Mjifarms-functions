@@ -111,71 +111,69 @@ module.exports = async (req, res) => {
 
             // 3. Process API Response and Extract Diagnosis Data
             const diagnosisData = {
-                date: admin.database.ServerValue.TIMESTAMP, // Use Realtime Database server timestamp
+                date: admin.database.ServerValue.TIMESTAMP,
                 source: "AI_Plant.id",
                 confidenceLevel: 0,
-                pestOrDisease: "Unknown Issue",
+                pestOrDisease: "Unknown Issue", // Initialize as Unknown
                 recommendations: [],
-                relatedDiseaseImages: [], // CHANGED: NEW FIELD: To store URLs of related disease images
+                relatedDiseaseImages: [],
                 rawApiResponse: apiResponse // Store raw response for debugging/future analysis
             };
 
-            // Process 'is_healthy' status from apiResponse.result
-            if (apiResponse.result && apiResponse.result.is_healthy && typeof apiResponse.result.is_healthy.binary !== 'undefined') {
-                if (apiResponse.result.is_healthy.binary === true) { // Changed to true based on sample
+            const result = apiResponse.result;
+
+            if (result && result.is_healthy && typeof result.is_healthy.binary !== 'undefined') {
+                if (result.is_healthy.binary === true) {
                     diagnosisData.pestOrDisease = "Healthy";
-                    diagnosisData.confidenceLevel = apiResponse.result.is_healthy.probability * 100; // Convert to percentage
+                    diagnosisData.confidenceLevel = result.is_healthy.probability * 100;
                     diagnosisData.recommendations.push("Your plant appears healthy!");
-                } else if (apiResponse.result.is_healthy.binary === false) { // Changed to false based on sample
-                    // If unhealthy, we expect to find specific diseases below
-                    diagnosisData.pestOrDisease = "Unhealthy - Specific issue pending analysis.";
-                    diagnosisData.confidenceLevel = apiResponse.result.is_healthy.probability * 100;
-                }
-            }
-            
-            // CHANGED: Process detailed health assessment diseases from apiResponse.result.disease.suggestions
-            if (apiResponse.result && apiResponse.result.disease && apiResponse.result.disease.suggestions && apiResponse.result.disease.suggestions.length > 0) {
-                // Get the top suggestion for primary display
-                const topSuggestion = apiResponse.result.disease.suggestions[0];
-                diagnosisData.pestOrDisease = topSuggestion.name; // Use the name from the top suggestion
-                diagnosisData.confidenceLevel = topSuggestion.probability * 100; // Convert to percentage
+                } else { // Plant is unhealthy, look for specific diseases
+                    if (result.disease && result.disease.suggestions && result.disease.suggestions.length > 0) {
+                        const topSuggestion = result.disease.suggestions[0];
+                        diagnosisData.pestOrDisease = topSuggestion.name;
+                        diagnosisData.confidenceLevel = topSuggestion.probability * 100;
 
-                // Extract recommendations (if 'details' were requested with description/treatment)
-                // Note: Your sample JSON does NOT have 'description' or 'treatment' in 'details',
-                // so these will likely be empty unless you modify the Plant.id API call to request them.
-                if (topSuggestion.details) {
-                    if (topSuggestion.details.description) {
-                        diagnosisData.recommendations.push(topSuggestion.details.description.value);
-                    }
-                    if (topSuggestion.details.treatment) {
-                        if (Array.isArray(topSuggestion.details.treatment)) {
-                            diagnosisData.recommendations.push(...topSuggestion.details.treatment.map(t => t.value || t));
-                        } else if (topSuggestion.details.treatment.value) {
-                            diagnosisData.recommendations.push(topSuggestion.details.treatment.value);
+                        // Extract recommendations from details if available
+                        // Note: Your sample JSON does NOT have 'description' or 'treatment' in 'details',
+                        // so these will likely be empty unless you modify the Plant.id API call to request them.
+                        if (topSuggestion.details) {
+                            if (topSuggestion.details.description) {
+                                diagnosisData.recommendations.push(topSuggestion.details.description.value);
+                            }
+                            if (topSuggestion.details.treatment) {
+                                if (Array.isArray(topSuggestion.details.treatment)) {
+                                    diagnosisData.recommendations.push(...topSuggestion.details.treatment.map(t => t.value || t));
+                                } else if (topSuggestion.details.treatment.value) {
+                                    diagnosisData.recommendations.push(topSuggestion.details.treatment.value);
+                                }
+                            }
                         }
-                    }
-                }
-                
-                // If no specific recommendations were extracted from 'details', use the suggestion name
-                if (diagnosisData.recommendations.length === 0) {
-                    diagnosisData.recommendations.push(`Possible issue: ${topSuggestion.name}.`);
-                }
+                        
+                        // Fallback recommendation if specific details weren't extracted
+                        if (diagnosisData.recommendations.length === 0) {
+                            diagnosisData.recommendations.push(`Possible issue: ${topSuggestion.name}.`);
+                        }
 
-
-                // CHANGED: Extract similar images for ALL identified suggestions
-                apiResponse.result.disease.suggestions.forEach(suggestion => {
-                    if (suggestion.similar_images && Array.isArray(suggestion.similar_images)) {
-                        suggestion.similar_images.forEach(img => {
-                            if (img.url) {
-                                diagnosisData.relatedDiseaseImages.push(img.url);
+                        // Extract similar images
+                        result.disease.suggestions.forEach(suggestion => {
+                            if (suggestion.similar_images && Array.isArray(suggestion.similar_images)) {
+                                suggestion.similar_images.forEach(img => {
+                                    if (img.url) {
+                                        diagnosisData.relatedDiseaseImages.push(img.url);
+                                    }
+                                });
                             }
                         });
+                    } else {
+                        // Plant is unhealthy but no specific disease suggestions found
+                        diagnosisData.pestOrDisease = "Unhealthy - Specific issue pending analysis.";
+                        diagnosisData.confidenceLevel = result.is_healthy.probability * 100; // Still show overall unhealthiness confidence
+                        diagnosisData.recommendations.push("Could not identify a specific issue despite appearing unhealthy. Please try a clearer photo, different angle, or consult an expert.");
                     }
-                });
+                }
             } else if (apiResponse.suggestions && apiResponse.suggestions.length > 0 && diagnosisData.pestOrDisease === "Unknown Issue") {
-                // This block is generally for species identification when health assessment is not the primary output.
-                // Your sample API response primarily focuses on disease within `result.disease.suggestions`.
-                // This block might not be hit if `result.disease.suggestions` is present.
+                // This block handles cases where it's a general plant identification, not a health assessment.
+                // This is less likely with health=only in payload.
                 const topSuggestion = apiResponse.suggestions[0];
                 diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
                 diagnosisData.confidenceLevel = topSuggestion.probability * 100;
@@ -190,7 +188,7 @@ module.exports = async (req, res) => {
                 }
             }
             
-            // Final fallback if nothing else was identified or processed
+            // Final fallback if absolutely nothing was determined
             if (diagnosisData.pestOrDisease === "Unknown Issue" && diagnosisData.recommendations.length === 0) {
                 diagnosisData.recommendations.push("Could not identify specific issue. Please try a clearer photo, different angle, or consult an expert.");
             }
