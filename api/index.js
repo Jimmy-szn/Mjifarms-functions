@@ -37,12 +37,12 @@ const PLANTID_API_KEY = process.env.PLANTID_API_KEY;
 module.exports = async (req, res) => {
     // --- START CORS HEADERS (Explicitly handled within the function) ---
     // These headers are set for every response, including OPTIONS.
-    res.setHeader('Access-Control-Allow-Origin', '*'); // CHANGED: Still wildcard for dev
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // CHANGED: Explicitly allowing OPTIONS
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // CHANGED: Allowing necessary headers
-    res.setHeader('Access-Control-Max-Age', '86400'); // CHANGED: Caching preflight response
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Temporarily allow all origins for debugging
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Explicitly allowing OPTIONS
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization'); // Allowing necessary headers
+    res.setHeader('Access-Control-Max-Age', '86400'); // Caching preflight response
 
-    // CHANGED: Handle OPTIONS preflight request - crucial for CORS
+    // Handle OPTIONS preflight request - crucial for CORS
     if (req.method === 'OPTIONS') {
         return res.status(204).end(); // 204 No Content for successful preflight
     }
@@ -59,8 +59,8 @@ module.exports = async (req, res) => {
 
     // --- REVISED ROUTING LOGIC START ---
     // Handle POST requests for diagnosis at the '/diagnose' path
-    if (req.url === '/diagnose' && req.method === 'POST') { // CHANGED: Explicitly checking for '/diagnose' path and POST method
-        console.log("Matched POST request to /diagnose for plant diagnosis."); // For debugging Vercel logs
+    if (req.url === '/diagnose' && req.method === 'POST') {
+        console.log("Matched POST request to /diagnose for plant diagnosis.");
 
         // 1. Authenticate User (Verify Firebase ID Token)
         const authHeader = req.headers.authorization;
@@ -78,24 +78,22 @@ module.exports = async (req, res) => {
             return res.status(401).json({ message: 'Unauthorized: Invalid token.', error: error.message });
         }
 
-        // CHANGED: Destructure latitude, longitude from req.body (optional from Flutter)
         const { base64Image, cropLogId, plantId, latitude, longitude } = req.body; 
 
         if (!base64Image || !cropLogId || !plantId) {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
-        // --- CHANGED: STRICTLY MATCHING CURL EXAMPLE FOR PLANT.ID API v3 health_assessment ---
-        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; // CHANGED: Corrected to v3 health_assessment
+        // --- STRICTLY MATCHING CURL EXAMPLE FOR PLANT.ID API v3 health_assessment ---
+        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; 
         
-        // CHANGED: Construct the payload as per the curl example
         const plantIdPayload = {
             api_key: PLANTID_API_KEY,
             images: [base64Image],
-            // CHANGED: Only include latitude and longitude if they are provided from Flutter
+            // Only include latitude and longitude if they are provided from Flutter
             ...(latitude !== undefined && latitude !== null && { latitude: latitude }),
             ...(longitude !== undefined && longitude !== null && { longitude: longitude }),
-            similar_images: true // CHANGED: As per curl example
+            similar_images: true // As per curl example, crucial for getting related images
         };
 
         try {
@@ -116,31 +114,32 @@ module.exports = async (req, res) => {
                 confidenceLevel: 0,
                 pestOrDisease: "Unknown Issue", // Initialize as Unknown
                 recommendations: [],
-                relatedDiseaseImages: [],
+                relatedDiseaseImages: [], // To store URLs of related disease images
                 rawApiResponse: apiResponse // Store raw response for debugging/future analysis
             };
 
             const result = apiResponse.result;
 
             if (result) {
-                // First, try to get a specific disease/pest suggestion
+                // First, try to get a specific disease/pest suggestion from result.disease.suggestions
                 if (result.disease && result.disease.suggestions && result.disease.suggestions.length > 0) {
                     const topSuggestion = result.disease.suggestions[0];
                     diagnosisData.pestOrDisease = topSuggestion.name; // Use the name from the top suggestion
                     diagnosisData.confidenceLevel = topSuggestion.probability * 100; // Convert to percentage
 
                     // Extract recommendations from details if available
-                    // Note: Your sample JSON does NOT have 'description' or 'treatment' in 'details',
-                    // so these will likely be empty unless you modify the Plant.id API call to request them.
                     if (topSuggestion.details) {
                         if (topSuggestion.details.description) {
-                            diagnosisData.recommendations.push(topSuggestion.details.description.value);
+                            // Ensure description.value is accessed if 'description' is an object
+                            diagnosisData.recommendations.push(topSuggestion.details.description.value || topSuggestion.details.description);
                         }
                         if (topSuggestion.details.treatment) {
                             if (Array.isArray(topSuggestion.details.treatment)) {
                                 diagnosisData.recommendations.push(...topSuggestion.details.treatment.map(t => t.value || t));
                             } else if (topSuggestion.details.treatment.value) {
                                 diagnosisData.recommendations.push(topSuggestion.details.treatment.value);
+                            } else if (typeof topSuggestion.details.treatment === 'string') {
+                                diagnosisData.recommendations.push(topSuggestion.details.treatment);
                             }
                         }
                     }
@@ -194,7 +193,6 @@ module.exports = async (req, res) => {
             }
 
             // 4. Store Diagnosis in Realtime Database
-            // Structure: /crop_logs/{cropLogId}/diagnoses/{diagnosisId}
             const diagnosisRef = db.ref(`crop_logs/${cropLogId}/diagnoses`).push(); // Generates a unique key
             const diagnosisId = diagnosisRef.key; // Get the generated key
 
@@ -220,7 +218,7 @@ module.exports = async (req, res) => {
             }
         }
     } else if (isRootUrl(req.url) && req.method === 'GET') {
-        console.log("Matched GET request to root URL for health check."); // For debugging Vercel logs
+        console.log("Matched GET request to root URL for health check.");
         // --- Default / endpoint (Health Check) ---
         res.status(200).json({
             message: 'Welcome to the Urban Farming Assistant App API!',
