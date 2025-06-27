@@ -1,7 +1,7 @@
 {
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/(.*)", 
       "headers": [
         {
           "key": "Access-Control-Allow-Credentials",
@@ -23,16 +23,29 @@
     }
   ],
   "rewrites": [
+  
     {
-      "source": "/(.*)",
-      "has": [
-        { "type": "header", "key": "Access-Control-Request-Method", "value": "OPTIONS" }
-      ],
-      "destination": "/api/index.js"
+      "source": "/api/get-diagnose-image",
+      "has": [ { "type": "header", "key": "Access-Control-Request-Method", "value": "OPTIONS" } ],
+      "destination": "/api/proxy-plant-id-image.js" 
     },
+ 
+    {
+      "source": "/api/get-diagnose-image",
+      "destination": "/api/proxy-plant-id-image.js" 
+    },
+
+   
     {
       "source": "/(.*)",
-      "destination": "/api/index.js"
+      "has": [ { "type": "header", "key": "Access-Control-Request-Method", "value": "OPTIONS" } ],
+      "destination": "/api/index.js" 
+    },
+    
+    
+    {
+      "source": "/(.*)", 
+      "destination": "/api/index.js" 
     }
   ]
 }
