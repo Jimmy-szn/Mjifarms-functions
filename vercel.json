@@ -27,12 +27,12 @@
     {
       "source": "/api/get-diagnose-image",
       "has": [ { "type": "header", "key": "Access-Control-Request-Method", "value": "OPTIONS" } ],
-      "destination": "/api/proxy-plant-id-image.js" 
+      "destination": "/api/get-diagnosis-image.js" 
     },
  
     {
       "source": "/api/get-diagnose-image",
-      "destination": "/api/proxy-plant-id-image.js" 
+      "destination": "/api/get-diagnosis-image.js" 
     },
 
    
