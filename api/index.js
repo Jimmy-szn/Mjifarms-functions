@@ -78,15 +78,17 @@ module.exports = async (req, res) => {
             return res.status(401).json({ message: 'Unauthorized: Invalid token.', error: error.message });
         }
 
-        const { base64Image, cropLogId, plantId, latitude, longitude } = req.body;
+        const userId = decodedToken.uid; // Extract userId after successful token verification
+
+        const { base64Image, cropLogId, plantId, latitude, longitude } = req.body; 
 
         if (!base64Image || !cropLogId || !plantId) {
             return res.status(400).json({ message: 'Bad Request: Missing base64Image, cropLogId, or plantId.' });
         }
 
         // --- STRICTLY MATCHING CURL EXAMPLE FOR PLANT.ID API v3 health_assessment ---
-        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment';
-
+        const PLANTID_ENDPOINT = 'https://plant.id/api/v3/health_assessment'; 
+        
         const plantIdPayload = {
             api_key: PLANTID_API_KEY,
             images: [base64Image],
@@ -115,7 +117,13 @@ module.exports = async (req, res) => {
                 pestOrDisease: "Unknown Issue", // Initialize as Unknown
                 recommendations: [],
                 relatedDiseaseImages: [], // To store URLs of related disease images
-                rawApiResponse: apiResponse // Store raw response for debugging/future analysis
+                rawApiResponse: apiResponse, // Store raw response for debugging/future analysis
+                userId: userId, // Store the userId who made this diagnosis
+                cropLogId: cropLogId, // Store the cropLogId for this diagnosis
+                plantId: plantId, // Store the plantId for this diagnosis
+                reviewStatus: 'none', // Initial status for expert review
+                latitude: latitude, // Store location if available
+                longitude: longitude, // Store location if available
             };
 
             const result = apiResponse.result;
@@ -143,7 +151,7 @@ module.exports = async (req, res) => {
                             }
                         }
                     }
-
+                    
                     // Fallback recommendation if specific details weren't extracted
                     if (diagnosisData.recommendations.length === 0) {
                         diagnosisData.recommendations.push(`Possible issue: ${topSuggestion.name}.`);
@@ -176,7 +184,7 @@ module.exports = async (req, res) => {
                     diagnosisData.pestOrDisease = `Identified as: ${topSuggestion.plant_name}`;
                     diagnosisData.confidenceLevel = topSuggestion.probability * 100;
                     diagnosisData.recommendations.push("No specific health issue detected, but the plant is identified as " + topSuggestion.plant_name + ".");
-
+                    
                     if (topSuggestion.similar_images && Array.isArray(topSuggestion.similar_images)) {
                         topSuggestion.similar_images.forEach(img => {
                             if (img.url) {
@@ -186,23 +194,31 @@ module.exports = async (req, res) => {
                     }
                 }
             }
-
+            
             // Final fallback if absolutely nothing was determined
             if (diagnosisData.pestOrDisease === "Unknown Issue" && diagnosisData.recommendations.length === 0) {
                 diagnosisData.recommendations.push("Could not identify specific issue. Please try a clearer photo, different angle, or consult an expert.");
             }
 
-            // 4. Store Diagnosis in Realtime Database
+            // 4. Store Diagnosis in Realtime Database under crop_logs
             const diagnosisRef = db.ref(`crop_logs/${cropLogId}/diagnoses`).push(); // Generates a unique key
             const diagnosisId = diagnosisRef.key; // Get the generated key
 
-            await diagnosisRef.set(diagnosisData); // Save the data
+            await diagnosisRef.set(diagnosisData); // Save the diagnosis data
 
-            // 5. Send Response to Flutter App
-            return res.status(200).json({
-                status: 'success', diagnosisId: diagnosisId, cropLogId: cropLogId,
-                diagnosisDetails: diagnosisData
+            // 5. NEW: Store a reference to this diagnosis under the user's node
+            const userDiagnosisRef = db.ref(`users/${userId}/diagnoses/${diagnosisId}`);
+            await userDiagnosisRef.set({
+                cropLogId: cropLogId,
+                timestamp: admin.database.ServerValue.TIMESTAMP,
+                // You could also store a snippet of the diagnosis result here for quick display
+                // e.g., 'pestOrDisease': diagnosisData.pestOrDisease
             });
+            console.log(`Diagnosis ID ${diagnosisId} added to user ${userId}'s list.`);
+            // END NEW
+
+            // 6. Send Response to Flutter App
+            return res.status(200).json({ status: 'success', diagnosisId: diagnosisId, cropLogId: cropLogId, diagnosisDetails: diagnosisData });
 
         } catch (error) {
             console.error("Error during Plant.id API call or Realtime Database write:", error);
